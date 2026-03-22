@@ -116,3 +116,14 @@ class InputDriver:
     def focus_window_at_cursor(self):
         """Click at the current cursor position to focus/select the window there."""
         self.click()
+
+    def task_view(self):
+        """Open Windows Task View (Win+Tab)."""
+        import ctypes
+        VK_LWIN = 0x5B
+        VK_TAB = 0x09
+        KEYEVENTF_KEYUP = 0x0002
+        user32.keybd_event(VK_LWIN, 0, 0, 0)
+        user32.keybd_event(VK_TAB, 0, 0, 0)
+        user32.keybd_event(VK_TAB, 0, KEYEVENTF_KEYUP, 0)
+        user32.keybd_event(VK_LWIN, 0, KEYEVENTF_KEYUP, 0)

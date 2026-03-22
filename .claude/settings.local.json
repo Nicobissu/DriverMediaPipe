@@ -8,7 +8,10 @@
       "Bash(curl -L -o hand_landmarker.task \"https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/latest/hand_landmarker.task\")",
       "Bash(timeout 5 python main.py)",
       "Bash(python main.py)",
-      "Bash(timeout 8 cat \"C:\\\\Users\\\\Usuario\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\e--Usuario-Documents-GitHub-DriverMediaPipe\\\\99feaf05-ca61-400e-87ec-f9adc5ed8de6\\\\tasks\\\\bktzghlg5.output\")"
+      "Bash(timeout 8 cat \"C:\\\\Users\\\\Usuario\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\e--Usuario-Documents-GitHub-DriverMediaPipe\\\\99feaf05-ca61-400e-87ec-f9adc5ed8de6\\\\tasks\\\\bktzghlg5.output\")",
+      "Bash(curl -L -o pose_landmarker.task \"https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_heavy/float16/latest/pose_landmarker_heavy.task\")",
+      "Bash(curl -L -o face_landmarker.task \"https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/latest/face_landmarker.task\")",
+      "Bash(timeout 15 cat \"C:\\\\Users\\\\Usuario\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\e--Usuario-Documents-GitHub-DriverMediaPipe\\\\99feaf05-ca61-400e-87ec-f9adc5ed8de6\\\\tasks\\\\besute0dj.output\")"
     ]
   }
 }

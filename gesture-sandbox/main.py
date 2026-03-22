@@ -1,218 +1,447 @@
-"""Gesture Sandbox — webcam hand gesture detection with OpenCV UI."""
+"""Emotion Detector — facial expression analysis with MediaPipe."""
 
 import sys
 import os
-import cv2
 import time
+import cv2
+import math
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from core.camera import Camera
-from core.hand_tracker import HandTracker
-from core.gesture_engine import GestureEngine
-from core.input_driver import InputDriver, SCREEN_W, SCREEN_H
-from gestures.base import GestureResult
-from config import (
-    CAM_X_MIN, CAM_X_MAX, CAM_Y_MIN, CAM_Y_MAX,
-    PINCH_ACTIVATE_DIST,
-)
+from core.full_tracker import FullTracker
 
 
-class GestureDriver:
-    def __init__(self):
-        self.camera = Camera()
-        self.tracker = HandTracker()
-        self.engine = GestureEngine()
-        self.input = InputDriver()
+# ─── Emotion definitions ───
+# Each emotion has:
+#   primary:   blendshapes that MUST be active (all must pass threshold)
+#   secondary: blendshapes that boost the score
+#   inhibit:   blendshapes that suppress this emotion
+#   threshold: minimum primary signal to even consider this emotion
+#   color, emoji: display
 
-        # Cursor state
-        self.prev_cx = SCREEN_W / 2
-        self.prev_cy = SCREEN_H / 2
-        self.smooth = 0.35  # lower = smoother but laggier
+EMOTIONS = {
+    "FELIZ": {
+        "primary": {
+            "mouthSmileLeft": 0.25,
+            "mouthSmileRight": 0.25,
+        },
+        "secondary": {
+            "cheekSquintLeft": 0.15,
+            "cheekSquintRight": 0.15,
+            "mouthDimpleLeft": 0.1,
+            "mouthDimpleRight": 0.1,
+        },
+        "inhibit": {
+            "mouthFrownLeft": 0.3,
+            "mouthFrownRight": 0.3,
+            "browDownLeft": 0.4,
+            "browDownRight": 0.4,
+        },
+        "threshold": 0.15,
+        "color": (0, 230, 150),
+        "emoji": ":)",
+    },
+    "MUY FELIZ": {
+        "primary": {
+            "mouthSmileLeft": 0.5,
+            "mouthSmileRight": 0.5,
+            "cheekSquintLeft": 0.2,
+            "cheekSquintRight": 0.2,
+        },
+        "secondary": {
+            "jawOpen": 0.15,     # laughing
+            "mouthDimpleLeft": 0.1,
+            "mouthDimpleRight": 0.1,
+        },
+        "inhibit": {
+            "mouthFrownLeft": 0.2,
+            "browDownLeft": 0.3,
+        },
+        "threshold": 0.3,
+        "color": (0, 255, 100),
+        "emoji": "XD",
+    },
+    "TRISTE": {
+        "primary": {
+            "mouthFrownLeft": 0.15,
+            "mouthFrownRight": 0.15,
+        },
+        "secondary": {
+            "browInnerUp": 0.15,
+            "mouthLowerDownLeft": 0.1,
+            "mouthLowerDownRight": 0.1,
+            "mouthPucker": 0.1,
+            "mouthShrugLower": 0.1,
+        },
+        "inhibit": {
+            "mouthSmileLeft": 0.3,
+            "mouthSmileRight": 0.3,
+        },
+        "threshold": 0.1,
+        "color": (230, 160, 50),
+        "emoji": ":(",
+    },
+    "ENOJADO": {
+        "primary": {
+            "browDownLeft": 0.2,
+            "browDownRight": 0.2,
+        },
+        "secondary": {
+            "noseSneerLeft": 0.15,
+            "noseSneerRight": 0.15,
+            "jawForward": 0.1,
+            "mouthShrugLower": 0.1,
+            "eyeSquintLeft": 0.1,
+            "eyeSquintRight": 0.1,
+            "mouthPressLeft": 0.1,
+            "mouthPressRight": 0.1,
+        },
+        "inhibit": {
+            "mouthSmileLeft": 0.3,
+            "mouthSmileRight": 0.3,
+            "browInnerUp": 0.4,
+        },
+        "threshold": 0.15,
+        "color": (30, 40, 255),
+        "emoji": ">:(",
+    },
+    "SORPRENDIDO": {
+        "primary": {
+            "eyeWideLeft": 0.15,
+            "eyeWideRight": 0.15,
+            "jawOpen": 0.2,
+        },
+        "secondary": {
+            "browInnerUp": 0.2,
+            "browOuterUpLeft": 0.15,
+            "browOuterUpRight": 0.15,
+            "mouthFunnel": 0.1,
+        },
+        "inhibit": {
+            "browDownLeft": 0.3,
+            "browDownRight": 0.3,
+            "eyeSquintLeft": 0.3,
+        },
+        "threshold": 0.12,
+        "color": (0, 200, 255),
+        "emoji": ":O",
+    },
+    "DISGUSTO": {
+        "primary": {
+            "noseSneerLeft": 0.2,
+            "noseSneerRight": 0.2,
+        },
+        "secondary": {
+            "mouthUpperUpLeft": 0.15,
+            "mouthUpperUpRight": 0.15,
+            "mouthShrugUpper": 0.15,
+            "browDownLeft": 0.1,
+        },
+        "inhibit": {
+            "mouthSmileLeft": 0.3,
+            "mouthSmileRight": 0.3,
+        },
+        "threshold": 0.15,
+        "color": (50, 200, 50),
+        "emoji": "X(",
+    },
+    "CONCENTRADO": {
+        "primary": {
+            "eyeSquintLeft": 0.15,
+            "eyeSquintRight": 0.15,
+        },
+        "secondary": {
+            "browDownLeft": 0.1,
+            "browDownRight": 0.1,
+            "mouthPressLeft": 0.1,
+            "mouthPressRight": 0.1,
+        },
+        "inhibit": {
+            "mouthSmileLeft": 0.3,
+            "jawOpen": 0.3,
+            "eyeWideLeft": 0.2,
+        },
+        "threshold": 0.1,
+        "color": (200, 180, 100),
+        "emoji": "-_-",
+    },
+    "SKEPTICO": {
+        "primary": {
+            "browOuterUpLeft": 0.2,   # one brow up
+        },
+        "secondary": {
+            "mouthLeft": 0.1,
+            "mouthPressLeft": 0.1,
+            "eyeSquintRight": 0.1,
+        },
+        "inhibit": {
+            "browOuterUpRight": 0.25,  # both brows up = surprised, not skeptic
+            "jawOpen": 0.3,
+        },
+        "threshold": 0.15,
+        "color": (180, 140, 220),
+        "emoji": "o_O",
+    },
+    "GUINO ;)": {
+        "primary": {
+            "eyeBlinkLeft": 0.4,
+        },
+        "secondary": {
+            "mouthSmileLeft": 0.15,
+            "mouthSmileRight": 0.15,
+            "cheekSquintLeft": 0.15,
+        },
+        "inhibit": {
+            "eyeBlinkRight": 0.35,  # both eyes closed = blink, not wink
+        },
+        "threshold": 0.3,
+        "color": (255, 180, 50),
+        "emoji": ";)",
+    },
+}
 
-        # Debounce
-        self.fist_clicked = False
-        self.pinch_clicked = False
-        self.scroll_prev_y = None
-        self.l_minimize_done = False
-        self.l_close_done = False
-        self.l_select_done = False
 
-        # FPS
-        self.fps = 0
-        self._fps_time = time.time()
-        self._fps_count = 0
+def detect_emotion(bs_map):
+    """Score emotions from blendshape dict. Returns sorted list of (name, score)."""
+    if not bs_map:
+        return [("NEUTRAL", 1.0)]
 
-    def _map_to_screen(self, gesture):
-        d = gesture.data
-        nx = d.get("smooth_x", d.get("x", 0.5))
-        ny = d.get("smooth_y", d.get("y", 0.5))
+    scores = {}
 
-        # Remap camera zone to 0..1
-        rx = (nx - CAM_X_MIN) / (CAM_X_MAX - CAM_X_MIN)
-        ry = (ny - CAM_Y_MIN) / (CAM_Y_MAX - CAM_Y_MIN)
-        rx = max(0.0, min(1.0, rx))
-        ry = max(0.0, min(1.0, ry))
+    for emotion, rule in EMOTIONS.items():
+        # Check inhibitors first
+        inhibited = False
+        for bs_name, thresh in rule.get("inhibit", {}).items():
+            if bs_map.get(bs_name, 0) > thresh:
+                inhibited = True
+                break
+        if inhibited:
+            scores[emotion] = 0.0
+            continue
 
-        target_x = rx * SCREEN_W
-        target_y = ry * SCREEN_H
+        # Primary signals — all must exceed their threshold
+        primary_score = 0.0
+        primary_count = 0
+        all_primary_met = True
+        for bs_name, min_val in rule["primary"].items():
+            val = bs_map.get(bs_name, 0)
+            if val < min_val * 0.5:  # at least half the threshold
+                all_primary_met = False
+                break
+            # Score: how far above threshold (0 at threshold, 1 at 2x threshold)
+            normalized = min(1.0, val / min_val) if min_val > 0 else 0
+            primary_score += normalized
+            primary_count += 1
 
-        # Smooth cursor
-        self.prev_cx += (target_x - self.prev_cx) * self.smooth
-        self.prev_cy += (target_y - self.prev_cy) * self.smooth
-        self.prev_cx = max(0, min(SCREEN_W - 1, self.prev_cx))
-        self.prev_cy = max(0, min(SCREEN_H - 1, self.prev_cy))
+        if not all_primary_met or primary_count == 0:
+            scores[emotion] = 0.0
+            continue
 
-        return int(self.prev_cx), int(self.prev_cy)
+        primary_avg = primary_score / primary_count
 
-    def _apply_right(self, g):
-        name = g.name
-        if name == "R_CURSOR":
-            sx, sy = self._map_to_screen(g)
-            self.input.move_mouse(sx, sy)
-            self.fist_clicked = False
-            self.pinch_clicked = False
-        elif name == "R_SCROLL":
-            ny = g.data.get("smooth_y", g.data.get("y", 0.5))
-            if self.scroll_prev_y is None:
-                self.scroll_prev_y = ny
-            dy = ny - self.scroll_prev_y
-            self.scroll_prev_y = ny
-            if abs(dy) > 0.003:
-                self.input.scroll(int(-dy * 3000))
-            self.fist_clicked = False
-            self.pinch_clicked = False
-        elif name == "R_STANDBY":
-            self.fist_clicked = False
-            self.pinch_clicked = False
-            self.scroll_prev_y = None
-        elif name == "R_CLICK":
-            if not self.fist_clicked:
-                self.input.click()
-                self.fist_clicked = True
-            self.pinch_clicked = False
-            self.scroll_prev_y = None
-        elif name == "R_DOUBLE_CLICK":
-            if not self.pinch_clicked:
-                self.input.double_click()
-                self.pinch_clicked = True
-            self.fist_clicked = False
-            self.scroll_prev_y = None
-        else:
-            self.fist_clicked = False
-            self.pinch_clicked = False
-            self.scroll_prev_y = None
+        # Secondary signals — optional boosters
+        secondary_score = 0.0
+        secondary_count = 0
+        for bs_name, min_val in rule.get("secondary", {}).items():
+            val = bs_map.get(bs_name, 0)
+            if val > min_val * 0.3:
+                normalized = min(1.0, val / min_val)
+                secondary_score += normalized
+                secondary_count += 1
 
-    def _apply_left(self, g):
-        name = g.name
-        if name == "L_MINIMIZE":
-            if not self.l_minimize_done:
-                self.input.minimize_window()
-                self.l_minimize_done = True
-            self.l_close_done = False
-            self.l_select_done = False
-        elif name == "L_CLOSE":
-            if not self.l_close_done:
-                self.input.close_window()
-                self.l_close_done = True
-            self.l_minimize_done = False
-            self.l_select_done = False
-        elif name == "L_SELECT":
-            if not self.l_select_done:
-                self.input.focus_window_at_cursor()
-                self.l_select_done = True
-            self.l_minimize_done = False
-            self.l_close_done = False
-        else:
-            self.l_minimize_done = False
-            self.l_close_done = False
-            self.l_select_done = False
+        secondary_avg = secondary_score / max(1, secondary_count)
 
-    def _draw_hud(self, frame, right, left):
-        """Draw gesture info overlay on the camera frame."""
+        # Combined: primary is 70%, secondary is 30%
+        raw = primary_avg * 0.7 + secondary_avg * 0.3
+
+        # Apply threshold — below threshold fades to zero
+        thresh = rule["threshold"]
+        if primary_avg < thresh:
+            raw *= 0.1
+
+        # Non-linear: make strong signals stand out more
+        final = min(1.0, raw * raw * 1.5)
+
+        scores[emotion] = final
+
+    # Neutral = inverse of strongest emotion
+    max_score = max(scores.values()) if scores else 0
+    scores["NEUTRAL"] = max(0.0, 1.0 - max_score * 2.0)
+
+    return sorted(scores.items(), key=lambda x: x[1], reverse=True)
+
+
+def draw_emotion_bars(frame, ranked, x, y_start, bar_w=200):
+    """Draw emotion score bars."""
+    for i, (emotion, score) in enumerate(ranked):
+        if score < 0.005:
+            continue
+        rule = EMOTIONS.get(emotion, {"color": (180, 180, 180), "emoji": ":|"})
+        color = rule["color"]
+        emoji = rule.get("emoji", "")
+        y = y_start + i * 30
+
+        # Background bar
+        cv2.rectangle(frame, (x, y), (x + bar_w, y + 22), (30, 30, 30), -1)
+        # Score bar
+        bw = int(score * bar_w)
+        if bw > 0:
+            cv2.rectangle(frame, (x, y), (x + bw, y + 22), color, -1)
+        # Border
+        cv2.rectangle(frame, (x, y), (x + bar_w, y + 22), (60, 60, 60), 1)
+        # Label
+        label = f"{emoji} {emotion} {score:.0%}"
+        cv2.putText(frame, label, (x + 5, y + 16),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.42, (255, 255, 255), 1)
+
+
+def draw_face_oval(frame, face_landmarks, w, h, color, thickness=2):
+    """Draw oval around face."""
+    if not face_landmarks:
+        return
+    import numpy as np
+    oval_idx = [10, 338, 297, 332, 284, 251, 389, 356, 454, 323, 361, 288,
+                397, 365, 379, 378, 400, 377, 152, 148, 176, 149, 150, 136,
+                172, 58, 132, 93, 234, 127, 162, 21, 54, 103, 67, 109]
+    pts = []
+    for idx in oval_idx:
+        if idx < len(face_landmarks):
+            p = face_landmarks[idx]
+            pts.append([int(p.x * w), int(p.y * h)])
+    if len(pts) > 3:
+        cv2.polylines(frame, [np.array(pts, np.int32)], True, color, thickness)
+
+
+def main():
+    cam = Camera()
+    tracker = FullTracker()
+
+    fps = 0
+    fps_t = time.time()
+    fps_c = 0
+
+    # Smoothing
+    smooth_scores = {}
+    alpha = 0.3  # EMA factor: lower = smoother, higher = more responsive
+
+    print("Emotion Detector — ESC to quit")
+    cv2.namedWindow("Emotion Detector", cv2.WINDOW_NORMAL)
+    cv2.resizeWindow("Emotion Detector", 960, 720)
+
+    while True:
+        ok, frame = cam.read()
+        if not ok:
+            continue
+
+        result = tracker.process(frame)
         h, w = frame.shape[:2]
 
         # FPS
-        self._fps_count += 1
+        fps_c += 1
         now = time.time()
-        if now - self._fps_time >= 0.5:
-            self.fps = self._fps_count / (now - self._fps_time)
-            self._fps_count = 0
-            self._fps_time = now
-        cv2.putText(frame, f"FPS: {self.fps:.0f}", (10, 28),
-                     cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 128), 2)
+        if now - fps_t >= 0.5:
+            fps = fps_c / (now - fps_t)
+            fps_c = 0
+            fps_t = now
 
-        # Right hand gesture
-        rn = right.name if right.active else "---"
-        color_r = (0, 255, 128)
-        cv2.putText(frame, f"R: {rn}", (10, 60),
-                     cv2.FONT_HERSHEY_SIMPLEX, 0.7, color_r, 2)
+        # Build blendshape map
+        bs_map = {}
+        if result.face_blendshapes:
+            bs_map = {bs.category_name: bs.score for bs in result.face_blendshapes}
 
-        # Right fingers
-        if right.active and "fingers" in right.data:
-            y = 90
-            for fname in ["thumb", "index", "middle", "ring", "pinky"]:
-                state = right.data["fingers"].get(fname, False)
-                icon = "UP" if state else "--"
-                c = (0, 200, 100) if state else (80, 80, 80)
-                cv2.putText(frame, f"  {fname}: {icon}", (10, y),
-                             cv2.FONT_HERSHEY_SIMPLEX, 0.45, c, 1)
-                y += 18
+        # Detect
+        ranked = detect_emotion(bs_map)
 
-        # Left hand gesture
-        ln = left.name if left.active else "---"
-        color_l = (255, 150, 50)
-        cv2.putText(frame, f"L: {ln}", (w - 200, 60),
-                     cv2.FONT_HERSHEY_SIMPLEX, 0.7, color_l, 2)
+        # EMA smoothing
+        for emotion, score in ranked:
+            prev = smooth_scores.get(emotion, 0.0)
+            smooth_scores[emotion] = prev + alpha * (score - prev)
 
-        # Controls legend at bottom
-        legend = [
-            "Idx+Mid=Cursor  Fist=Click  Thumb~Idx=DblClick",
-            "Idx+Mid+Ring=Scroll  Index=Standby",
-        ]
-        for i, line in enumerate(legend):
-            cv2.putText(frame, line, (10, h - 30 + i * 20),
-                         cv2.FONT_HERSHEY_SIMPLEX, 0.4, (180, 180, 180), 1)
+        smoothed = sorted(smooth_scores.items(), key=lambda x: x[1], reverse=True)
 
-    def run(self):
-        print("Gesture Driver running — press ESC to quit")
-        cv2.namedWindow("Gesture Driver", cv2.WINDOW_NORMAL)
-        cv2.resizeWindow("Gesture Driver", 800, 500)
+        # Top emotion
+        top_emotion = "NEUTRAL"
+        top_score = 0.0
+        for emo, sc in smoothed:
+            if emo != "NEUTRAL" and sc > top_score:
+                top_emotion = emo
+                top_score = sc
+        # If no strong emotion, show neutral
+        if top_score < 0.08:
+            top_emotion = "NEUTRAL"
+            top_score = smooth_scores.get("NEUTRAL", 1.0)
 
-        while True:
-            ok, frame = self.camera.read()
-            if not ok:
-                continue
+        top_rule = EMOTIONS.get(top_emotion, {"color": (180, 180, 180), "emoji": ":|"})
 
-            # Detect hands
-            hands, all_landmarks = self.tracker.process(frame)
-            self.tracker.draw_landmarks(frame, all_landmarks, hands)
+        # ── Draw ──
 
-            # Gestures
-            frame_shape = (frame.shape[0], frame.shape[1])
-            right, left = self.engine.update(hands, frame_shape)
+        # Face mesh (subtle dots)
+        if result.face_landmarks:
+            for p in result.face_landmarks:
+                cx, cy = int(p.x * w), int(p.y * h)
+                cv2.circle(frame, (cx, cy), 1, (80, 60, 100), -1)
 
-            # Apply input
-            self._apply_right(right)
-            self._apply_left(left)
+        # Face oval colored by emotion
+        thickness = 2 + int(top_score * 3)
+        draw_face_oval(frame, result.face_landmarks, w, h, top_rule["color"], thickness)
 
-            # Draw HUD
-            self._draw_hud(frame, right, left)
+        # Top emotion label (centered, top)
+        emoji = top_rule.get("emoji", "")
+        label = f"{emoji}  {top_emotion}"
+        text_size = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 1.3, 3)[0]
+        tx = (w - text_size[0]) // 2
+        # Shadow
+        cv2.rectangle(frame, (tx - 15, 8), (tx + text_size[0] + 15, 58), (0, 0, 0), -1)
+        cv2.rectangle(frame, (tx - 15, 8), (tx + text_size[0] + 15, 58), top_rule["color"], 2)
+        cv2.putText(frame, label, (tx, 48),
+                    cv2.FONT_HERSHEY_SIMPLEX, 1.3, top_rule["color"], 3)
 
-            # Show
-            cv2.imshow("Gesture Driver", frame)
-            key = cv2.waitKey(1) & 0xFF
-            if key == 27:  # ESC
-                break
+        # Confidence bar
+        bar_total = 250
+        bar_x = (w - bar_total) // 2
+        bw = int(min(1.0, top_score) * bar_total)
+        cv2.rectangle(frame, (bar_x, 62), (bar_x + bw, 72), top_rule["color"], -1)
+        cv2.rectangle(frame, (bar_x, 62), (bar_x + bar_total, 72), (60, 60, 60), 1)
 
-        self.camera.release()
-        self.tracker.release()
-        cv2.destroyAllWindows()
+        # All emotion bars (right side)
+        draw_emotion_bars(frame, smoothed, w - 240, 90)
+
+        # FPS (top left)
+        cv2.putText(frame, f"FPS: {fps:.0f}", (10, 25),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 220, 120), 2)
+
+        # Active blendshapes (bottom left)
+        if bs_map:
+            active = [(k, v) for k, v in bs_map.items() if v > 0.1 and k != "_neutral"]
+            active.sort(key=lambda x: x[1], reverse=True)
+            y_pos = h - 18 * min(len(active), 12) - 25
+            cv2.putText(frame, "Blendshapes:", (10, y_pos - 5),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.4, (140, 140, 140), 1)
+            for name, score in active[:12]:
+                y_pos += 16
+                bw2 = int(score * 100)
+                cv2.rectangle(frame, (10, y_pos - 9), (10 + bw2, y_pos + 1), (60, 120, 170), -1)
+                cv2.putText(frame, f"{name}: {score:.2f}", (12, y_pos),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.3, (210, 210, 210), 1)
+
+        # No face warning
+        if not result.face_landmarks:
+            cv2.putText(frame, "No face detected", (w // 2 - 100, h // 2),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2)
+
+        cv2.imshow("Emotion Detector", frame)
+        if cv2.waitKey(1) & 0xFF == 27:
+            break
+
+    cam.release()
+    tracker.release()
+    cv2.destroyAllWindows()
 
 
 if __name__ == "__main__":
     try:
-        GestureDriver().run()
+        main()
     except Exception as e:
         import traceback
         traceback.print_exc()
