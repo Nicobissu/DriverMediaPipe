@@ -3,6 +3,8 @@ import pygame
 from config import (
     WINDOW_WIDTH, WINDOW_HEIGHT, BG_COLOR,
     VIDEO_PANEL_WIDTH, LOG_PANEL_WIDTH,
+    CAM_X_MIN, CAM_X_MAX, CAM_Y_MIN, CAM_Y_MAX,
+    ACCEL_CURVE, ACCEL_GAIN,
 )
 from ui.video_panel import VideoPanel
 from ui.gesture_log import GestureLog
@@ -34,9 +36,17 @@ class SandboxWindow:
         # Input driver
         self.input = InputDriver()
 
-        # Debounce state
+        # Right hand state
         self._fist_clicked = False
         self._pinch_clicked = False
+        self._scroll_prev_y = None
+        self._prev_cursor_x = SCREEN_W / 2
+        self._prev_cursor_y = SCREEN_H / 2
+
+        # Left hand state
+        self._l_minimize_done = False
+        self._l_close_done = False
+        self._l_select_done = False
 
     def handle_events(self):
         for event in pygame.event.get():
@@ -47,28 +57,55 @@ class SandboxWindow:
         return True
 
     def _map_to_screen(self, gesture):
-        """Map normalized hand coords (0-1) to screen pixels."""
+        """Map normalized hand coords to screen pixels with zone remap + acceleration.
+        Webcam is mirrored, so moving hand right = x decreases in camera.
+        We invert so cursor moves same direction as the hand."""
         d = gesture.data
         nx = d.get("smooth_x", d.get("x", 0.5))
         ny = d.get("smooth_y", d.get("y", 0.5))
-        return int(nx * SCREEN_W), int(ny * SCREEN_H)
 
-    def _apply_input(self, gesture):
-        """Map gestures to real input actions."""
+        # Remap camera zone to 0-1 (invert X because webcam is mirrored)
+        rx = 1.0 - (nx - CAM_X_MIN) / (CAM_X_MAX - CAM_X_MIN)
+        ry = (ny - CAM_Y_MIN) / (CAM_Y_MAX - CAM_Y_MIN)
+        rx = max(0.0, min(1.0, rx))
+        ry = max(0.0, min(1.0, ry))
+
+        # Target position
+        target_x = rx * SCREEN_W
+        target_y = ry * SCREEN_H
+
+        # Non-linear acceleration
+        dx = target_x - self._prev_cursor_x
+        dy = target_y - self._prev_cursor_y
+
+        def accel(delta):
+            sign = 1 if delta >= 0 else -1
+            mag = abs(delta) / SCREEN_W
+            return sign * (mag ** ACCEL_CURVE) * ACCEL_GAIN * SCREEN_W
+
+        final_x = self._prev_cursor_x + accel(dx)
+        final_y = self._prev_cursor_y + accel(dy)
+        final_x = max(0, min(SCREEN_W - 1, final_x))
+        final_y = max(0, min(SCREEN_H - 1, final_y))
+
+        self._prev_cursor_x = final_x
+        self._prev_cursor_y = final_y
+        return int(final_x), int(final_y)
+
+    def _apply_right(self, gesture):
+        """Right hand: cursor, click, scroll, double click."""
         name = gesture.name
 
-        if name == "CURSOR":
-            # Index + middle → move cursor
+        if name == "R_CURSOR":
             sx, sy = self._map_to_screen(gesture)
             self.input.move_mouse(sx, sy)
             self._fist_clicked = False
             self._pinch_clicked = False
 
-        elif name == "THREE":
-            # Index + middle + ring → scroll
+        elif name == "R_SCROLL":
             d = gesture.data
             ny = d.get("smooth_y", d.get("y", 0.5))
-            if not hasattr(self, "_scroll_prev_y"):
+            if self._scroll_prev_y is None:
                 self._scroll_prev_y = ny
             dy = ny - self._scroll_prev_y
             self._scroll_prev_y = ny
@@ -77,22 +114,19 @@ class SandboxWindow:
             self._fist_clicked = False
             self._pinch_clicked = False
 
-        elif name == "STANDBY":
-            # Only index → do nothing, cursor stays in place
+        elif name == "R_STANDBY":
             self._fist_clicked = False
             self._pinch_clicked = False
             self._scroll_prev_y = None
 
-        elif name == "FIST":
-            # All closed → single click (once)
+        elif name == "R_CLICK":
             if not self._fist_clicked:
                 self.input.click()
                 self._fist_clicked = True
             self._pinch_clicked = False
             self._scroll_prev_y = None
 
-        elif name == "PINCH":
-            # Thumb + index touching → double click (once)
+        elif name == "R_DOUBLE_CLICK":
             if not self._pinch_clicked:
                 self.input.double_click()
                 self._pinch_clicked = True
@@ -100,33 +134,70 @@ class SandboxWindow:
             self._scroll_prev_y = None
 
         else:
-            # PALM, IDLE, other → reset
             self._fist_clicked = False
             self._pinch_clicked = False
             self._scroll_prev_y = None
+
+    def _apply_left(self, gesture):
+        """Left hand: window management."""
+        name = gesture.name
+
+        if name == "L_MINIMIZE":
+            if not self._l_minimize_done:
+                self.input.minimize_window()
+                self._l_minimize_done = True
+            self._l_close_done = False
+            self._l_select_done = False
+
+        elif name == "L_CLOSE":
+            if not self._l_close_done:
+                self.input.close_window()
+                self._l_close_done = True
+            self._l_minimize_done = False
+            self._l_select_done = False
+
+        elif name == "L_SELECT":
+            if not self._l_select_done:
+                self.input.focus_window_at_cursor()
+                self._l_select_done = True
+            self._l_minimize_done = False
+            self._l_close_done = False
+
+        else:
+            self._l_minimize_done = False
+            self._l_close_done = False
+            self._l_select_done = False
 
     def _get_cursor_pos(self):
         pt = _POINT()
         ctypes.windll.user32.GetCursorPos(ctypes.byref(pt))
         return pt.x, pt.y
 
-    def draw(self, bgr_frame, gesture_result, fps):
+    def draw(self, bgr_frame, right_gesture, left_gesture, fps):
         self.screen.fill(BG_COLOR)
 
-        # Apply real input
-        self._apply_input(gesture_result)
+        # Apply right hand input
+        self._apply_right(right_gesture)
+
+        # Apply left hand commands
+        self._apply_left(left_gesture)
 
         # Cursor position for desktop overlay
-        if gesture_result.active and "x" in gesture_result.data:
-            sx, sy = self._map_to_screen(gesture_result)
+        if right_gesture.active and "x" in right_gesture.data:
+            sx, sy = int(self._prev_cursor_x), int(self._prev_cursor_y)
         else:
             sx, sy = self._get_cursor_pos()
 
         # Draw panels
         self.video_panel.draw(self.screen, bgr_frame, fps)
-        self.gesture_log.log(gesture_result)
-        self.gesture_log.draw(self.screen, gesture_result)
-        self.desktop_panel.update(gesture_result, sx, sy)
+
+        # Log both hands
+        self.gesture_log.log(right_gesture)
+        if left_gesture.active:
+            self.gesture_log.log(left_gesture)
+        self.gesture_log.draw(self.screen, right_gesture)
+
+        self.desktop_panel.update(right_gesture, sx, sy)
         self.desktop_panel.draw(self.screen)
 
         pygame.display.flip()

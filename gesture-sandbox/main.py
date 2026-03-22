@@ -31,21 +31,26 @@ def main():
             if not ok:
                 continue
 
-            # Detect hands
-            hands = tracker.process(frame)
+            # Detect hands (returns dict with 'right'/'left' + all landmarks list)
+            hands, all_landmarks = tracker.process(frame)
 
-            # Draw landmarks on frame
-            tracker.draw_landmarks(frame, hands)
+            # Draw landmarks on frame (color-coded per hand)
+            tracker.draw_landmarks(frame, all_landmarks, hands)
 
-            # Run gesture engine
+            # Run gesture engine (processes both hands)
             frame_shape = (frame.shape[0], frame.shape[1])  # (h, w)
-            gesture = engine.update(hands, frame_shape)
+            right_gesture, left_gesture = engine.update(hands, frame_shape)
 
             # Update FPS
             fps_counter.tick()
 
             # Render
-            window.draw(frame, gesture, fps_counter.fps)
+            window.draw(frame, right_gesture, left_gesture, fps_counter.fps)
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        print(f"\nERROR: {e}")
+        input("Press Enter to exit...")
     finally:
         camera.release()
         tracker.release()

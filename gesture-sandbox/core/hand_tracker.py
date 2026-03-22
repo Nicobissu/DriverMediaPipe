@@ -52,28 +52,63 @@ class HandTracker:
         self._timestamp_ms = 0
 
     def process(self, bgr_frame):
-        """Process a BGR frame. Returns list of hand landmark lists (normalized coords)."""
+        """Process a BGR frame. Returns dict with 'right' and 'left' hand landmarks.
+
+        Note: MediaPipe reports handedness as seen in the image (mirrored).
+        Since webcam is mirrored, 'Left' label = user's right hand and vice versa.
+        We flip this so the dict keys match the user's actual hands.
+        """
         rgb = cv2.cvtColor(bgr_frame, cv2.COLOR_BGR2RGB)
         mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb)
         self._timestamp_ms += 33  # ~30fps increment
         result = self._landmarker.detect_for_video(mp_image, self._timestamp_ms)
-        return result.hand_landmarks  # list of list of NormalizedLandmark
 
-    def draw_landmarks(self, bgr_frame, hands_landmarks):
-        """Draw landmarks + connections on the frame (in-place)."""
+        hands = {"right": None, "left": None}
+        all_landmarks = []
+
+        for i, hand_lm in enumerate(result.hand_landmarks):
+            all_landmarks.append(hand_lm)
+            if i < len(result.handedness):
+                # MediaPipe label is mirrored: "Left" = user's right hand
+                label = result.handedness[i][0].category_name
+                if label == "Left":
+                    hands["right"] = hand_lm
+                else:
+                    hands["left"] = hand_lm
+
+        return hands, all_landmarks
+
+    def draw_landmarks(self, bgr_frame, all_landmarks, hands=None):
+        """Draw landmarks + connections on the frame (in-place).
+        Color-codes right hand (green) vs left hand (blue)."""
         h, w = bgr_frame.shape[:2]
-        for landmarks in hands_landmarks:
+
+        right_lm = hands.get("right") if hands else None
+        left_lm = hands.get("left") if hands else None
+
+        for landmarks in all_landmarks:
+            # Pick color based on which hand
+            if landmarks is right_lm:
+                line_color = (0, 180, 100)   # green = right (control)
+                dot_color = (0, 255, 128)
+            elif landmarks is left_lm:
+                line_color = (180, 100, 0)   # blue = left (commands)
+                dot_color = (255, 150, 50)
+            else:
+                line_color = (0, 180, 100)
+                dot_color = (0, 255, 128)
+
             # Draw connections
             for start_idx, end_idx in self.HAND_CONNECTIONS:
                 p1 = landmarks[start_idx]
                 p2 = landmarks[end_idx]
                 x1, y1 = int(p1.x * w), int(p1.y * h)
                 x2, y2 = int(p2.x * w), int(p2.y * h)
-                cv2.line(bgr_frame, (x1, y1), (x2, y2), (0, 180, 100), 2)
+                cv2.line(bgr_frame, (x1, y1), (x2, y2), line_color, 2)
             # Draw landmarks
             for lm in landmarks:
                 cx, cy = int(lm.x * w), int(lm.y * h)
-                cv2.circle(bgr_frame, (cx, cy), 4, (0, 255, 128), -1)
+                cv2.circle(bgr_frame, (cx, cy), 4, dot_color, -1)
 
     def release(self):
         self._landmarker.close()

@@ -94,3 +94,25 @@ class InputDriver:
         inp.mi.dwFlags = MOUSEEVENTF_WHEEL
         inp.mi.mouseData = int(amount)
         _send_input(inp)
+
+    # ── Window management ──
+
+    SW_MINIMIZE = 6
+    SW_RESTORE = 9
+
+    def minimize_window(self):
+        """Minimize the foreground window."""
+        hwnd = user32.GetForegroundWindow()
+        if hwnd:
+            user32.ShowWindow(hwnd, self.SW_MINIMIZE)
+
+    def close_window(self):
+        """Close the foreground window (send WM_CLOSE)."""
+        WM_CLOSE = 0x0010
+        hwnd = user32.GetForegroundWindow()
+        if hwnd:
+            user32.PostMessageW(hwnd, WM_CLOSE, 0, 0)
+
+    def focus_window_at_cursor(self):
+        """Click at the current cursor position to focus/select the window there."""
+        self.click()

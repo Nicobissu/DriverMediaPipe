@@ -34,9 +34,19 @@ SCROLL_MIN_VELOCITY = 0.005     # minimum y-delta per frame to count as scroll
 ZOOM_SENSITIVITY = 2.0          # multiplier for zoom factor
 GRAB_CURL_THRESHOLD = 0.15      # how curled fingers must be for grab
 
+# ── Cursor mapping ──
+# Camera active zone: hand rarely reaches 0.0 or 1.0, so we remap a sub-range to full screen
+CAM_X_MIN = 0.15   # left edge of usable camera area
+CAM_X_MAX = 0.85   # right edge
+CAM_Y_MIN = 0.10   # top edge
+CAM_Y_MAX = 0.80   # bottom edge
+# Non-linear acceleration: cursor_delta = raw_delta ^ ACCEL_CURVE * ACCEL_GAIN
+ACCEL_CURVE = 1.5   # >1 = small moves precise, big moves faster
+ACCEL_GAIN = 1.8    # overall speed multiplier
+
 # ── Smoothing ──
-SMOOTHING_FRAMES = 5            # number of frames to average for stability
-GESTURE_HOLD_FRAMES = 3         # frames a gesture must persist to activate
+SMOOTHING_FRAMES = 3            # reduced for less lag (was 5)
+GESTURE_HOLD_FRAMES = 2         # reduced for faster response (was 3)
 
 # ── Gesture log ──
 LOG_MAX_ENTRIES = 20

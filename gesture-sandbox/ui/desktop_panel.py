@@ -13,7 +13,7 @@ class DesktopPanel:
         self._sct = mss.mss()
         self._monitor = self._sct.monitors[1]  # primary monitor
         # Capture every N frames to save CPU
-        self._frame_skip = 3
+        self._frame_skip = 6
         self._frame_count = 0
         self._cached_surface = None
         self._cursor_pos = (0, 0)
@@ -23,13 +23,13 @@ class DesktopPanel:
         """Update cursor position and style based on active gesture."""
         self._cursor_pos = (screen_x, screen_y)
         name = gesture.name
-        if name == "POINT":
+        if name == "R_CURSOR":
             self._cursor_style = "point"
-        elif name == "PINCH":
+        elif name == "R_DOUBLE_CLICK":
             self._cursor_style = "pinch"
-        elif name == "GRAB":
+        elif name == "R_CLICK":
             self._cursor_style = "grab"
-        elif name == "SCROLL":
+        elif name == "R_SCROLL":
             self._cursor_style = "scroll"
         else:
             self._cursor_style = "default"
