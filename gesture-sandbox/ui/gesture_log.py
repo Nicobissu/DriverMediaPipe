@@ -16,6 +16,8 @@ class GestureLog:
         self.rect = pygame.Rect(x, y, width, height)
         self._entries = deque(maxlen=LOG_MAX_ENTRIES)
         self._last_gesture = None
+        self._font = None
+        self._font_big = None
 
     def log(self, gesture_result):
         name = gesture_result.name
@@ -32,8 +34,11 @@ class GestureLog:
         pygame.draw.rect(surface, PANEL_BG, self.rect)
         pygame.draw.rect(surface, (60, 60, 60), self.rect, 1)
 
-        font = pygame.font.SysFont("consolas", 15)
-        font_big = pygame.font.SysFont("consolas", 18, bold=True)
+        if self._font is None:
+            self._font = pygame.font.SysFont("consolas", 15)
+            self._font_big = pygame.font.SysFont("consolas", 18, bold=True)
+        font = self._font
+        font_big = self._font_big
         x0 = self.rect.x + 10
         y = self.rect.y + 8
 

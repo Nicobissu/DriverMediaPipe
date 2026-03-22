@@ -28,8 +28,8 @@ MP_DETECTION_CONFIDENCE = 0.7
 MP_TRACKING_CONFIDENCE = 0.6
 
 # ── Gesture thresholds ──
-PINCH_ACTIVATE_DIST = 0.04      # normalized distance to trigger pinch
-PINCH_DEACTIVATE_DIST = 0.06    # hysteresis: release threshold higher
+PINCH_ACTIVATE_DIST = 0.07      # normalized distance to trigger pinch (thumb near index)
+PINCH_DEACTIVATE_DIST = 0.10    # hysteresis: release threshold higher
 SCROLL_MIN_VELOCITY = 0.005     # minimum y-delta per frame to count as scroll
 ZOOM_SENSITIVITY = 2.0          # multiplier for zoom factor
 GRAB_CURL_THRESHOLD = 0.15      # how curled fingers must be for grab

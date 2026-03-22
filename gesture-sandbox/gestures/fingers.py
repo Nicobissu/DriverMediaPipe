@@ -41,8 +41,14 @@ class FingersGesture(Gesture):
         closed = [name for name, state in fingers.items() if not state]
         count_up = len(extended)
 
-        # Distance between thumb tip and index tip (for pinch detection)
-        pinch_dist = distance_2d(lm[HT.THUMB_TIP], lm[HT.INDEX_TIP])
+        # Pinch: minimum distance between thumb line (TIP, IP) and index line (MCP, PIP, DIP, TIP)
+        thumb_nodes = [HT.THUMB_TIP, HT.THUMB_IP]
+        index_nodes = [HT.INDEX_MCP, HT.INDEX_PIP, HT.INDEX_DIP, HT.INDEX_TIP]
+        pinch_dist = min(
+            distance_2d(lm[t], lm[i])
+            for t in thumb_nodes
+            for i in index_nodes
+        )
 
         # Position from index tip (for cursor)
         h, w = frame_shape

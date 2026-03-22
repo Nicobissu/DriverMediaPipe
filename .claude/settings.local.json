@@ -6,7 +6,9 @@
       "Bash(python -c \"import mediapipe as mp; print\\(dir\\(mp.tasks\\)\\); print\\(dir\\(mp.tasks.vision\\)\\)\")",
       "Bash(python -c \":*)",
       "Bash(curl -L -o hand_landmarker.task \"https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/latest/hand_landmarker.task\")",
-      "Bash(timeout 5 python main.py)"
+      "Bash(timeout 5 python main.py)",
+      "Bash(python main.py)",
+      "Bash(timeout 8 cat \"C:\\\\Users\\\\Usuario\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\e--Usuario-Documents-GitHub-DriverMediaPipe\\\\99feaf05-ca61-400e-87ec-f9adc5ed8de6\\\\tasks\\\\bktzghlg5.output\")"
     ]
   }
 }

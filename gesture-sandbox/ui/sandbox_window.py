@@ -8,7 +8,7 @@ from config import (
 )
 from ui.video_panel import VideoPanel
 from ui.gesture_log import GestureLog
-from ui.desktop_panel import DesktopPanel
+from ui.status_panel import StatusPanel
 from core.input_driver import InputDriver, SCREEN_W, SCREEN_H
 
 
@@ -29,7 +29,7 @@ class SandboxWindow:
         desktop_w = WINDOW_WIDTH - VIDEO_PANEL_WIDTH - LOG_PANEL_WIDTH
         self.video_panel = VideoPanel(0, 0, VIDEO_PANEL_WIDTH, WINDOW_HEIGHT)
         self.gesture_log = GestureLog(VIDEO_PANEL_WIDTH, 0, LOG_PANEL_WIDTH, WINDOW_HEIGHT)
-        self.desktop_panel = DesktopPanel(
+        self.status_panel = StatusPanel(
             VIDEO_PANEL_WIDTH + LOG_PANEL_WIDTH, 0, desktop_w, WINDOW_HEIGHT
         )
 
@@ -64,8 +64,8 @@ class SandboxWindow:
         nx = d.get("smooth_x", d.get("x", 0.5))
         ny = d.get("smooth_y", d.get("y", 0.5))
 
-        # Remap camera zone to 0-1 (invert X because webcam is mirrored)
-        rx = 1.0 - (nx - CAM_X_MIN) / (CAM_X_MAX - CAM_X_MIN)
+        # Remap camera zone to 0-1 (no X invert — webcam already mirrors)
+        rx = (nx - CAM_X_MIN) / (CAM_X_MAX - CAM_X_MIN)
         ry = (ny - CAM_Y_MIN) / (CAM_Y_MAX - CAM_Y_MIN)
         rx = max(0.0, min(1.0, rx))
         ry = max(0.0, min(1.0, ry))
@@ -182,12 +182,6 @@ class SandboxWindow:
         # Apply left hand commands
         self._apply_left(left_gesture)
 
-        # Cursor position for desktop overlay
-        if right_gesture.active and "x" in right_gesture.data:
-            sx, sy = int(self._prev_cursor_x), int(self._prev_cursor_y)
-        else:
-            sx, sy = self._get_cursor_pos()
-
         # Draw panels
         self.video_panel.draw(self.screen, bgr_frame, fps)
 
@@ -197,8 +191,7 @@ class SandboxWindow:
             self.gesture_log.log(left_gesture)
         self.gesture_log.draw(self.screen, right_gesture)
 
-        self.desktop_panel.update(right_gesture, sx, sy)
-        self.desktop_panel.draw(self.screen)
+        self.status_panel.draw(self.screen, right_gesture, left_gesture)
 
         pygame.display.flip()
         self.clock.tick(60)

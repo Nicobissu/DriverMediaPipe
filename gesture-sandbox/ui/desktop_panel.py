@@ -13,7 +13,7 @@ class DesktopPanel:
         self._sct = mss.mss()
         self._monitor = self._sct.monitors[1]  # primary monitor
         # Capture every N frames to save CPU
-        self._frame_skip = 6
+        self._frame_skip = 15
         self._frame_count = 0
         self._cached_surface = None
         self._cursor_pos = (0, 0)
